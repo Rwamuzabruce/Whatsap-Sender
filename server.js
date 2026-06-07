@@ -1,17 +1,25 @@
 const express = require("express");
-const { default: makeWASocket, useMultiFileAuthState } = require("@whiskeysockets/baileys");
+const {
+    default: makeWASocket,
+    useMultiFileAuthState,
+    DisconnectReason
+} = require("@whiskeysockets/baileys");
+
 const P = require("pino");
-const qrcode = require("qrcode-terminal");
 
 const app = express();
 app.use(express.json());
 
 let sock;
+let isStarting = false;
 
 // =====================
 // START WHATSAPP
 // =====================
 async function startWhatsApp() {
+    if (isStarting) return;
+    isStarting = true;
+
     const { state, saveCreds } = await useMultiFileAuthState("./auth");
 
     sock = makeWASocket({
@@ -21,25 +29,27 @@ async function startWhatsApp() {
 
     sock.ev.on("creds.update", saveCreds);
 
-    // =====================
-    // CONNECTION EVENTS
-    // =====================
     sock.ev.on("connection.update", (update) => {
-        const { connection, qr } = update;
-
-        // ✅ SHOW QR CODE
-        if (qr) {
-            console.log("\n📲 SCAN THIS QR CODE:\n");
-            qrcode.generate(qr, { small: true });
-        }
+        const { connection, lastDisconnect } = update;
 
         if (connection === "open") {
-            console.log("✅ WhatsApp CONNECTED SUCCESSFULLY");
+            console.log("✅ WhatsApp CONNECTED");
+            isStarting = false;
         }
 
         if (connection === "close") {
-            console.log("❌ Disconnected. Reconnecting...");
-            startWhatsApp();
+            const reason =
+                lastDisconnect?.error?.output?.statusCode;
+
+            console.log("❌ Disconnected:", reason);
+
+            // IMPORTANT: prevent infinite restart loop
+            isStarting = false;
+
+            setTimeout(() => {
+                console.log("🔄 Reconnecting WhatsApp...");
+                startWhatsApp();
+            }, 8000);
         }
     });
 }
@@ -48,17 +58,20 @@ startWhatsApp();
 
 
 // =====================
-// SEND FUNCTION
+// SAFE SEND FUNCTION
 // =====================
 async function sendMessage(phone, message) {
     try {
-        if (!sock) return;
+        if (!sock) {
+            console.log("❌ WhatsApp not ready");
+            return;
+        }
 
         await sock.sendMessage(`${phone}@s.whatsapp.net`, {
             text: message
         });
 
-        console.log("📤 Sent to:", phone);
+        console.log("📤 Sent:", phone);
     } catch (err) {
         console.log("Send error:", err.message);
     }
@@ -66,7 +79,7 @@ async function sendMessage(phone, message) {
 
 
 // =====================
-// 1. UPGRADE ENDPOINT
+// UPGRADE ENDPOINT
 // =====================
 app.post("/notify-upgraded", async (req, res) => {
     const { name, email, phone, planDays } = req.body;
@@ -79,23 +92,19 @@ app.post("/notify-upgraded", async (req, res) => {
         phone,
 `🎉 Hello ${name}
 
-Your CULLO Movies Premium is ACTIVE 🎬
+Premium Activated 🎬
+Email: ${email}
+Plan: ${planDays} days
 
-📧 Email: ${email}
-⏳ Plan: ${planDays} days
-
-Enjoy unlimited movies 🍿`
+Enjoy movies 🍿`
     );
 
-    res.json({
-        success: true,
-        type: "upgrade"
-    });
+    res.json({ success: true });
 });
 
 
 // =====================
-// 2. EXPIRY ENDPOINT
+// EXPIRY ENDPOINT
 // =====================
 app.post("/notify-expiry", async (req, res) => {
     const { name, email, phone } = req.body;
@@ -108,22 +117,18 @@ app.post("/notify-expiry", async (req, res) => {
         phone,
 `⏳ Hello ${name}
 
-Your CULLO Movies Premium is ending soon.
+Your subscription is ending soon.
 
-📧 Email: ${email}
-
-⚠️ Renew now to continue watching movies 🎬`
+Email: ${email}
+👉 Upgrade now`
     );
 
-    res.json({
-        success: true,
-        type: "expiry"
-    });
+    res.json({ success: true });
 });
 
 
 // =====================
-// TEST ROUTE
+// HEALTH CHECK
 // =====================
 app.get("/", (req, res) => {
     res.send("CULLO WhatsApp Bot Running 🚀");
@@ -136,5 +141,5 @@ app.get("/", (req, res) => {
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
-    console.log("🚀 Server running on port", PORT);
+    console.log("🚀 Server running on", PORT);
 });
