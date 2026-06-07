@@ -1,110 +1,70 @@
 const express = require("express");
-const qrcode = require("qrcode-terminal");
-const { Client, LocalAuth } = require("whatsapp-web.js");
+const { default: makeWASocket, useMultiFileAuthState } = require("@whiskeysockets/baileys");
+const P = require("pino");
 
 const app = express();
 app.use(express.json());
 
-// ✅ SAFE WhatsApp setup (Render compatible)
-const client = new Client({
-    authStrategy: new LocalAuth(), // NO /data (fixes your error)
-    puppeteer: {
-        headless: true,
-        args: [
-            "--no-sandbox",
-            "--disable-setuid-sandbox"
-        ]
-    }
-});
+let sock;
 
-// QR login
-client.on("qr", (qr) => {
-    console.log("📲 Scan QR below:");
-    qrcode.generate(qr, { small: true });
-});
+// start whatsapp
+async function startWhatsApp() {
+    const { state, saveCreds } = await useMultiFileAuthState("./auth");
 
-// Ready
-client.on("ready", () => {
-    console.log("✅ WhatsApp is READY");
-});
+    sock = makeWASocket({
+        auth: state,
+        printQRInTerminal: true,
+        logger: P({ level: "silent" })
+    });
 
-client.initialize();
+    sock.ev.on("creds.update", saveCreds);
 
+    sock.ev.on("connection.update", (update) => {
+        if (update.connection === "open") {
+            console.log("✅ WhatsApp Connected");
+        }
+    });
+}
 
-// =====================
-// SEND FUNCTION
-// =====================
-async function sendMessage(phone, message) {
+startWhatsApp();
+
+// send function
+async function send(phone, message) {
     try {
-        await client.sendMessage(`${phone}@c.us`, message);
-        return true;
+        await sock.sendMessage(`${phone}@s.whatsapp.net`, { text: message });
     } catch (err) {
-        console.log("Send error:", err.message);
-        return false;
+        console.log(err.message);
     }
 }
 
-
-// =====================
-// 1. UPGRADE ENDPOINT
-// =====================
+// upgrade
 app.post("/notify-upgraded", async (req, res) => {
     const { name, email, phone, planDays } = req.body;
 
-    if (!phone) return res.status(400).json({ error: "phone required" });
-
-    const msg =
-`🎉 Hello ${name},
-
-Your CULLO Movies Premium is ACTIVE.
-
-📧 Email: ${email}
-⏳ Plan: ${planDays} days
-
-Enjoy unlimited movies 🎬`;
-
-    await sendMessage(phone, msg);
+    await send(phone,
+`🎉 Hello ${name}
+Premium Activated 🎬
+Email: ${email}
+Plan: ${planDays} days`);
 
     res.json({ success: true });
 });
 
-
-// =====================
-// 2. EXPIRY ENDPOINT
-// =====================
+// expiry
 app.post("/notify-expiry", async (req, res) => {
     const { name, email, phone } = req.body;
 
-    if (!phone) return res.status(400).json({ error: "phone required" });
-
-    const msg =
-`⏳ Hello ${name},
-
-Your CULLO Movies Premium is ending soon.
-
-📧 Email: ${email}
-
-⚠️ Renew now to continue watching movies 🎬`;
-
-    await sendMessage(phone, msg);
+    await send(phone,
+`⏳ Hello ${name}
+Your subscription is ending soon.
+Email: ${email}
+👉 Upgrade now`);
 
     res.json({ success: true });
 });
 
-
-// =====================
-// TEST ROUTE
-// =====================
-app.get("/", (req, res) => {
-    res.send("CULLO WhatsApp Server Running 🚀");
-});
-
-
-// =====================
-// START SERVER
-// =====================
+// server
 const PORT = process.env.PORT || 3000;
-
 app.listen(PORT, () => {
-    console.log(`🚀 Server running on port ${PORT}`);
+    console.log("Server running on", PORT);
 });
