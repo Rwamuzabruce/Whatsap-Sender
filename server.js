@@ -5,7 +5,11 @@ const { Client, LocalAuth } = require("whatsapp-web.js");
 const app = express();
 app.use(express.json());
 
-// WhatsApp CLIENT (Render safe setup)
+/**
+ * WHATSAPP CLIENT
+ * - LocalAuth keeps login session
+ * - /data folder required for Render persistence
+ */
 const client = new Client({
     authStrategy: new LocalAuth({
         dataPath: "/data/.wwebjs_auth"
@@ -19,21 +23,24 @@ const client = new Client({
     }
 });
 
-// QR CODE (only first time login)
+// QR LOGIN (first time only)
 client.on("qr", (qr) => {
-    console.log("Scan this QR code:");
+    console.log("Scan QR code below:");
     qrcode.generate(qr, { small: true });
 });
 
-// READY EVENT
+// READY
 client.on("ready", () => {
     console.log("✅ WhatsApp is READY");
 });
 
+// START WHATSAPP
 client.initialize();
 
 
-// 🔧 helper function
+// =======================
+// SEND FUNCTION
+// =======================
 async function sendMessage(phone, message) {
     try {
         await client.sendMessage(`${phone}@c.us`, message);
@@ -44,9 +51,10 @@ async function sendMessage(phone, message) {
     }
 }
 
-//
-// 1. UPGRADE NOTIFICATION
-//
+
+// =======================
+// 1. UPGRADE ENDPOINT
+// =======================
 app.post("/notify-upgraded", async (req, res) => {
     const { name, email, phone, planDays } = req.body;
 
@@ -60,7 +68,7 @@ app.post("/notify-upgraded", async (req, res) => {
 Your CULLO Movies Premium is now ACTIVE.
 
 📧 Email: ${email}
-⏳ Duration: ${planDays} days
+⏳ Plan: ${planDays} days
 
 Enjoy unlimited movies 🎬🍿`;
 
@@ -68,13 +76,14 @@ Enjoy unlimited movies 🎬🍿`;
 
     res.json({
         success: true,
-        type: "upgrade-sent"
+        type: "upgrade-notification"
     });
 });
 
-//
-// 2. EXPIRY NOTIFICATION
-//
+
+// =======================
+// 2. EXPIRY ENDPOINT
+// =======================
 app.post("/notify-expiry", async (req, res) => {
     const { name, email, phone } = req.body;
 
@@ -96,12 +105,24 @@ Your CULLO Movies Premium is ending soon.
 
     res.json({
         success: true,
-        type: "expiry-sent"
+        type: "expiry-notification"
     });
 });
 
 
+// =======================
+// TEST ROUTE
+// =======================
+app.get("/", (req, res) => {
+    res.send("CULLO WhatsApp Server is running 🚀");
+});
+
+
+// =======================
 // START SERVER
-app.listen(3000, () => {
-    console.log("🚀 Server running on port 3000");
+// =======================
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, () => {
+    console.log(`🚀 Server running on port ${PORT}`);
 });
