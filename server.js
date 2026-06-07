@@ -5,15 +5,9 @@ const { Client, LocalAuth } = require("whatsapp-web.js");
 const app = express();
 app.use(express.json());
 
-/**
- * WHATSAPP CLIENT
- * - LocalAuth keeps login session
- * - /data folder required for Render persistence
- */
+// ✅ SAFE WhatsApp setup (Render compatible)
 const client = new Client({
-    authStrategy: new LocalAuth({
-        dataPath: "/data/.wwebjs_auth"
-    }),
+    authStrategy: new LocalAuth(), // NO /data (fixes your error)
     puppeteer: {
         headless: true,
         args: [
@@ -23,24 +17,23 @@ const client = new Client({
     }
 });
 
-// QR LOGIN (first time only)
+// QR login
 client.on("qr", (qr) => {
-    console.log("Scan QR code below:");
+    console.log("📲 Scan QR below:");
     qrcode.generate(qr, { small: true });
 });
 
-// READY
+// Ready
 client.on("ready", () => {
     console.log("✅ WhatsApp is READY");
 });
 
-// START WHATSAPP
 client.initialize();
 
 
-// =======================
+// =====================
 // SEND FUNCTION
-// =======================
+// =====================
 async function sendMessage(phone, message) {
     try {
         await client.sendMessage(`${phone}@c.us`, message);
@@ -52,75 +45,64 @@ async function sendMessage(phone, message) {
 }
 
 
-// =======================
+// =====================
 // 1. UPGRADE ENDPOINT
-// =======================
+// =====================
 app.post("/notify-upgraded", async (req, res) => {
     const { name, email, phone, planDays } = req.body;
 
-    if (!phone) {
-        return res.status(400).json({ error: "phone required" });
-    }
+    if (!phone) return res.status(400).json({ error: "phone required" });
 
-    const message =
+    const msg =
 `🎉 Hello ${name},
 
-Your CULLO Movies Premium is now ACTIVE.
+Your CULLO Movies Premium is ACTIVE.
 
 📧 Email: ${email}
 ⏳ Plan: ${planDays} days
 
-Enjoy unlimited movies 🎬🍿`;
+Enjoy unlimited movies 🎬`;
 
-    await sendMessage(phone, message);
+    await sendMessage(phone, msg);
 
-    res.json({
-        success: true,
-        type: "upgrade-notification"
-    });
+    res.json({ success: true });
 });
 
 
-// =======================
+// =====================
 // 2. EXPIRY ENDPOINT
-// =======================
+// =====================
 app.post("/notify-expiry", async (req, res) => {
     const { name, email, phone } = req.body;
 
-    if (!phone) {
-        return res.status(400).json({ error: "phone required" });
-    }
+    if (!phone) return res.status(400).json({ error: "phone required" });
 
-    const message =
+    const msg =
 `⏳ Hello ${name},
 
 Your CULLO Movies Premium is ending soon.
 
 📧 Email: ${email}
 
-⚠️ Your subscription will expire soon.
-👉 Upgrade now to continue watching movies 🎬`;
+⚠️ Renew now to continue watching movies 🎬`;
 
-    await sendMessage(phone, message);
+    await sendMessage(phone, msg);
 
-    res.json({
-        success: true,
-        type: "expiry-notification"
-    });
+    res.json({ success: true });
 });
 
 
-// =======================
+// =====================
 // TEST ROUTE
-// =======================
+// =====================
 app.get("/", (req, res) => {
-    res.send("CULLO WhatsApp Server is running 🚀");
+    res.send("CULLO WhatsApp Server Running 🚀");
 });
 
 
-// =======================
+// =====================
 // START SERVER
-// =======================
+// =====================
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
